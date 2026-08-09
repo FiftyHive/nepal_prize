@@ -1,0 +1,12 @@
+{
+  "name": "ird-prize-scraper",
+  "version": "1.0.0",
+  "description": "Playwright scraper for IRD Nepal prize winner data",
+  "main": "ird-scraper.js",
+  "scripts": {
+    "scrape": "node ird-scraper.js"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
+  }
+}
