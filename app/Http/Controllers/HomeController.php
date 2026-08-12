@@ -24,8 +24,11 @@ class HomeController extends Controller
             ->orderByDesc('start_date')
             ->get();
 
+        $defaultPeriod = $periods->first();
+
         return view('home.index', [
             'periods'          => $periods,
+            'defaultPeriodId'  => $defaultPeriod?->id,
             'recaptchaSiteKey' => config('services.recaptcha.site_key'),
         ]);
     }

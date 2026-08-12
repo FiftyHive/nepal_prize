@@ -24,11 +24,15 @@
         <div class="form-group">
             <label for="period_id">Prize Period</label>
             <select id="period_id" name="period_id" required aria-required="true">
-                <option value="" disabled selected>— Select a prize period —</option>
+                @if(!$defaultPeriodId)
+                    <option value="" disabled selected>— Select a prize period —</option>
+                @endif
                 @forelse($periods->groupBy('year') as $year => $yearPeriods)
                     <optgroup label="{{ $year }}">
                         @foreach($yearPeriods as $period)
-                            <option value="{{ $period->id }}">{{ $period->display_label }}</option>
+                            <option value="{{ $period->id }}" @selected(($defaultPeriodId ?? null) === $period->id)>
+                                {{ $period->display_label }}
+                            </option>
                         @endforeach
                     </optgroup>
                 @empty
