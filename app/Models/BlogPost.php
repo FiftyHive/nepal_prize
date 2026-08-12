@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class BlogPost extends Model
@@ -44,6 +44,19 @@ class BlogPost extends Model
             ->where('published_at', '<=', now());
     }
 
+    public function scopeSearch(Builder $query, ?string $search): Builder
+    {
+        if (empty($search)) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $q) use ($search) {
+            $q->where('title', 'like', "%{$search}%")
+              ->orWhere('excerpt', 'like', "%{$search}%")
+              ->orWhere('content', 'like', "%{$search}%");
+        });
+    }
+
     public function getEffectiveSeoTitleAttribute(): string
     {
         return $this->seo_title ?: $this->title . ' — Nepal Prize Checker';
@@ -51,6 +64,12 @@ class BlogPost extends Model
 
     public function getEffectiveSeoDescriptionAttribute(): string
     {
-        return $this->seo_description ?: ($this->excerpt ?? '');
+        return $this->seo_description ?: ($this->excerpt ?? Str::limit(strip_tags($this->content ?? ''), 150));
+    }
+
+    public function getReadingTimeAttribute(): int
+    {
+        $words = str_word_count(strip_tags($this->content ?? ''));
+        return max(1, (int) ceil($words / 180));
     }
 }

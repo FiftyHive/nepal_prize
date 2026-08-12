@@ -25,10 +25,15 @@ class ReCaptchaService
     {
         $token = (string) ($token ?? '');
 
-        // Allow bypass in local/testing environment when keys not set
+        // Automatically pass in testing environment
+        if (app()->environment('testing')) {
+            return true;
+        }
+
+        // Allow bypass in local development when keys not set
         if (empty($this->secretKey)) {
             Log::warning('ReCaptcha secret key not configured — bypassing in dev mode');
-            return app()->environment('local', 'testing');
+            return app()->environment('local');
         }
 
         try {

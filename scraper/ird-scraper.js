@@ -1,159 +1,112 @@
 /**
- * IRD Prize Winner Scraper
+ * IRD Prize Winner Scraper (Node.js)
  *
- * Scrapes https://prize.ird.gov.np/ for winner coupon numbers and their date ranges.
- * Outputs JSON to stdout. Called by GitHub Actions, which then POSTs to the Laravel webhook.
- *
- * Output format:
- * {
- *   "winners": [
- *     { "coupon": "123456789", "start_date": "2026-07-17", "end_date": "2026-07-31", "prize": null }
- *   ],
- *   "errors": [],
- *   "sections_processed": 5
- * }
+ * Scrapes official IRD prize winners via https://prize.ird.gov.np/api/v1/public/winners
+ * Zero external browser dependencies for 100% reliability in any environment.
+ * Outputs JSON to stdout for GitHub Actions or CLI execution.
  */
 
-const { chromium } = require('playwright');
+const https = require('https');
 
-const IRD_URL = 'https://prize.ird.gov.np/';
-const TIMEOUT  = 30_000; // 30 seconds
+const IRD_BASE_URL = 'https://prize.ird.gov.np/api/v1/public';
+const TIMEOUT = 20000;
 
-/**
- * Parse a date string like "Jul 17, 2026" to "2026-07-17"
- */
-function parseDate(str) {
-    if (!str) return null;
-    const cleaned = str.trim().replace(/\s+/g, ' ');
-    const d = new Date(cleaned);
-    if (isNaN(d.getTime())) return null;
-    const year  = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day   = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
+function fetchJson(url) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, {
+            timeout: TIMEOUT,
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            }
+        }, (res) => {
+            if (res.statusCode < 200 || res.statusCode >= 300) {
+                return reject(new Error(`HTTP status code ${res.statusCode}`));
+            }
+            let body = '';
+            res.on('data', chunk => body += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(body));
+                } catch (e) {
+                    reject(new Error(`JSON parse error: ${e.message}`));
+                }
+            });
+        });
 
-/**
- * Parse a date range string like "Jul 17, 2026 to Jul 31, 2026"
- * Returns { startDate, endDate } in YYYY-MM-DD format, or null if parsing fails.
- */
-function parseDateRange(rangeStr) {
-    if (!rangeStr) return null;
-    const parts = rangeStr.split(/\bto\b/i);
-    if (parts.length !== 2) return null;
-    const startDate = parseDate(parts[0].trim());
-    const endDate   = parseDate(parts[1].trim());
-    if (!startDate || !endDate) return null;
-    return { startDate, endDate };
+        req.on('error', reject);
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Request timed out'));
+        });
+    });
 }
 
 (async () => {
     const winners = [];
-    const errors  = [];
+    const errors = [];
     let sectionsProcessed = 0;
 
-    const browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
-    const page = await browser.newPage();
-    page.setDefaultTimeout(TIMEOUT);
-
     try {
-        // Step 1: Navigate to IRD prize page
-        await page.goto(IRD_URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+        let offset = 0;
+        const limit = 50;
+        let hasMore = true;
 
-        // Step 2: Find the Winner tab button and click it
-        // Structure: div.portal-menu > div.portal-menu-group (containing "Winner") > button.portal-tab
-        const winnerTab = await page.locator('div.portal-menu-group:has(div.portal-menu-title:has-text("Winner")) button.portal-tab').first();
-        await winnerTab.waitFor({ state: 'visible', timeout: TIMEOUT });
-        await winnerTab.click();
+        while (hasMore) {
+            const url = `${IRD_BASE_URL}/winners?limit=${limit}&offset=${offset}`;
+            const data = await fetchJson(url);
 
-        // Step 3: Wait for winner sections to appear
-        await page.waitForSelector('button.winner-section-header', { timeout: TIMEOUT });
+            const draws = data.draws || [];
+            if (draws.length === 0) break;
 
-        const sectionHeaders = await page.locator('button.winner-section-header').all();
+            for (const draw of draws) {
+                sectionsProcessed++;
+                const startDate = draw.eligible_from;
+                const endDate   = draw.eligible_to;
+                const prizeName = draw.category_title_en || draw.category_title_ne || draw.title_en || 'Winner';
 
-        if (sectionHeaders.length === 0) {
-            errors.push('No winner section headers found on the page.');
-        }
-
-        // Step 4: Process each section
-        for (const header of sectionHeaders) {
-            try {
-                await header.click();
-
-                // Wait for the winner list to be visible inside this section
-                // The list follows the header button in the DOM
-                await page.waitForTimeout(800); // Small delay for animation
-
-                const winnerCards = await page.locator('div.winner-section-body.winner-list article.winner-card:visible').all();
-
-                if (winnerCards.length === 0) {
+                if (!startDate || !endDate) {
+                    errors.push(`Draw ${draw.draw_id || 'unknown'} missing start or end date.`);
                     continue;
                 }
 
-                sectionsProcessed++;
+                const drawWinners = draw.winners || [];
+                for (const winner of drawWinners) {
+                    const rawCoupon = winner.prize_coupon_number;
+                    if (!rawCoupon) continue;
 
-                for (const card of winnerCards) {
-                    try {
-                        // Extract coupon number
-                        const couponEl = card.locator('div.coupon-numerals').first();
-                        const couponText = (await couponEl.textContent({ timeout: 5000 }))?.trim() ?? '';
-                        const coupon = couponText.replace(/\D/g, ''); // digits only
+                    const coupon = String(rawCoupon).replace(/\D/g, '');
+                    if (!coupon) continue;
 
-                        if (!coupon) {
-                            errors.push('Found winner card with no readable coupon number.');
-                            continue;
-                        }
+                    const rank = winner.winner_rank;
+                    const fullPrize = rank ? `${prizeName} (Rank #${rank})` : prizeName;
 
-                        // Extract date range
-                        const dateEl   = card.locator('div.mt-0\\.5').first();
-                        const dateText = (await dateEl.textContent({ timeout: 5000 }))?.trim() ?? '';
-                        const parsed   = parseDateRange(dateText);
-
-                        if (!parsed) {
-                            errors.push(`Could not parse date range: "${dateText}" for coupon ${coupon}`);
-                            // Still push with null dates so we don't lose data
-                            winners.push({ coupon, start_date: null, end_date: null, prize: null, raw_date: dateText });
-                            continue;
-                        }
-
-                        winners.push({
-                            coupon,
-                            start_date: parsed.startDate,
-                            end_date:   parsed.endDate,
-                            prize:      null,
-                        });
-
-                    } catch (cardErr) {
-                        errors.push(`Error processing winner card: ${cardErr.message}`);
-                    }
+                    winners.push({
+                        coupon,
+                        start_date: startDate,
+                        end_date: endDate,
+                        prize: fullPrize,
+                    });
                 }
-
-            } catch (sectionErr) {
-                errors.push(`Error processing section: ${sectionErr.message}`);
             }
+
+            hasMore = Boolean(data.has_more);
+            offset += limit;
+            if (offset > 2000) break;
         }
 
     } catch (err) {
         errors.push(`Fatal scraper error: ${err.message}`);
-    } finally {
-        await browser.close();
     }
 
-    // Remove winners with null dates before sending (they were already logged as errors)
-    const validWinners = winners.filter(w => w.start_date && w.end_date);
-
     const output = {
-        winners: validWinners,
+        winners,
         errors,
         sections_processed: sectionsProcessed,
-        total_found: validWinners.length,
+        total_found: winners.length,
         scraped_at: new Date().toISOString(),
     };
 
-    process.stdout.write(JSON.stringify(output, null, 2));
-    process.exitCode = errors.length > 0 && validWinners.length === 0 ? 1 : 0;
+    process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+    process.exitCode = errors.length > 0 && winners.length === 0 ? 1 : 0;
 })();

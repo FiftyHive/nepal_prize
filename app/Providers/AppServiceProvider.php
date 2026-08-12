@@ -14,6 +14,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(\App\Services\CouponCheckerService::class);
         $this->app->singleton(\App\Services\ReCaptchaService::class);
+        $this->app->singleton(\App\Services\IRDScraperService::class);
     }
 
     public function boot(): void

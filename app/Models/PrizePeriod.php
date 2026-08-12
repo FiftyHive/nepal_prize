@@ -43,8 +43,18 @@ class PrizePeriod extends Model
      */
     public static function findByDateRange(string $startDate, string $endDate): ?self
     {
-        return static::where('start_date', $startDate)
-            ->where('end_date', $endDate)
+        // 1. Exact match on dates
+        $exact = static::whereDate('start_date', $startDate)
+            ->whereDate('end_date', $endDate)
+            ->first();
+
+        if ($exact) {
+            return $exact;
+        }
+
+        // 2. Overlapping / tolerant date match
+        return static::whereDate('start_date', '<=', $endDate)
+            ->whereDate('end_date', '>=', $startDate)
             ->first();
     }
 

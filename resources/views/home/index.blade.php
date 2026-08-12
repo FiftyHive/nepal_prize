@@ -8,9 +8,9 @@
 
     {{-- Logo / Branding --}}
     <div class="card-header">
-        <a href="{{ route('home') }}" class="logo" aria-label="Nepal Prize Checker Home">
+        <a href="https://whereismybusiness.com/" class="logo" aria-label="Nepal Prize Checker Home" style="text-decoration: none">
             <div class="card-logo-text">
-                Nepal<span class="brand">Prize</span>Checker
+                <span class="brand">WhereIsMyBusiness.com</span>
             </div>
         </a>
         <p class="card-subtitle">IRD Lottery Coupon Check</p>
@@ -141,7 +141,7 @@
             labelEl.className = 'result-label';
             if (r.allotted) {
                 labelEl.innerHTML = '<strong>Congratulations!</strong> Your coupon has been allotted.';
-                if (r.prize) labelEl.innerHTML += ' <em>Prize: ' + escapeHtml(r.prize) + '</em>';
+                if (r.prize) labelEl.innerHTML += '<br><span class="result-prize-tag">' + escapeHtml(r.prize) + '</span>';
             } else {
                 labelEl.textContent = 'Your coupon has not been allotted.';
             }
