@@ -43,12 +43,14 @@ jobs:
               --exclude='node_modules' \
               --exclude='tests' \
               --exclude='.env' \
-              --exclude='storage/logs/*.log' \
-              --exclude='storage/framework/cache/data/*' \
+              --exclude='*.tar.gz' \
+              --exclude='storage/logs/*' \
+              --exclude='storage/framework/cache/*' \
               --exclude='storage/framework/sessions/*' \
               --exclude='storage/framework/views/*' \
               --exclude='scraper/node_modules' \
-              -czf deploy_package.tar.gz .
+              -czf ../deploy_package.tar.gz .
+          mv ../deploy_package.tar.gz ./deploy_package.tar.gz
 
       - name: Upload package to server
         uses: appleboy/scp-action@v0.1.7
