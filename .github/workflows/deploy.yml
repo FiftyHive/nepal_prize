@@ -36,36 +36,31 @@ jobs:
       - name: Build frontend assets
         run: npm run build
 
-      - name: Verify build assets
+      - name: Create deployment archive
         run: |
-          ls -la public
-          if [ -d "public/build" ]; then ls -la public/build; fi
+          tar --exclude='.git' \
+              --exclude='.github' \
+              --exclude='node_modules' \
+              --exclude='tests' \
+              --exclude='.env' \
+              --exclude='storage/logs/*.log' \
+              --exclude='storage/framework/cache/data/*' \
+              --exclude='storage/framework/sessions/*' \
+              --exclude='storage/framework/views/*' \
+              --exclude='scraper/node_modules' \
+              -czf deploy_package.tar.gz .
 
-      - name: Sync files to server via Rsync
-        uses: burnett01/rsync-deployments@7.0.1
+      - name: Upload package to server
+        uses: appleboy/scp-action@v0.1.7
         with:
-          switches: >-
-            -avzr --delete-after
-            --exclude='.env'
-            --exclude='.htaccess'
-            --exclude='.git/'
-            --exclude='.github/'
-            --exclude='node_modules/'
-            --exclude='tests/'
-            --exclude='storage/logs/'
-            --exclude='storage/framework/cache/'
-            --exclude='storage/framework/sessions/'
-            --exclude='storage/framework/views/'
-            --exclude='public/storage'
-            --exclude='scraper/node_modules/'
-          path: ./
-          remote_path: ${{ secrets.APP_PATH }}
-          remote_host: ${{ secrets.HOST }}
-          remote_user: ${{ secrets.USERNAME }}
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
-          remote_port: ${{ secrets.PORT || 22 }}
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.PORT || 22 }}
+          source: 'deploy_package.tar.gz'
+          target: '/home/${{ secrets.USERNAME }}/'
 
-      - name: Execute post-deployment commands via SSH
+      - name: Extract & execute post-deployment commands via SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.HOST }}
@@ -73,6 +68,13 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.PORT || 22 }}
           script: |
+            # Ensure target directory exists
+            mkdir -p ${{ secrets.APP_PATH }}
+
+            # Extract archive into APP_PATH
+            tar -xzf /home/${{ secrets.USERNAME }}/deploy_package.tar.gz -C ${{ secrets.APP_PATH }}
+            rm -f /home/${{ secrets.USERNAME }}/deploy_package.tar.gz
+
             cd ${{ secrets.APP_PATH }}
 
             # Ensure storage directories and permissions exist
@@ -88,7 +90,7 @@ jobs:
             # Run database migrations
             php artisan migrate --force
 
-            # Optimize & Cache Laravel configuration and routes
+            # Optimize & cache Laravel configuration and routes
             php artisan config:clear
             php artisan cache:clear
             php artisan route:clear
